@@ -1,0 +1,33 @@
+# Rust build artifacts
+/target/
+
+# Environment variables and local secrets
+.env
+.env.*
+!.env.example
+
+# Local databases and SQLite sidecar files
+/data/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+
+# Generated logs and temporary files
+/logs/
+*.log
+*.tmp
+*.temp
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS metadata
+.DS_Store
+Thumbs.db
