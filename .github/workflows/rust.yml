@@ -1,11 +1,12 @@
-name: Rust CI and Build Packages
+name: Linux CI and Package
 
 on:
   push:
     branches:
-      - "**"
+      - main
+      - master
     tags:
-      - "v*"
+      - 'v*'
   pull_request:
   workflow_dispatch:
 
@@ -13,13 +14,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: linux-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: Format, lint, and test
-    runs-on: ubuntu-latest
+  build-linux:
+    name: Test and package Linux (x86_64)
+    runs-on: ubuntu-22.04
+
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -41,92 +43,52 @@ jobs:
       - name: Run tests
         run: cargo test --all-targets --all-features
 
-  package:
-    name: Build ${{ matrix.os_name }} package
-    needs: quality
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-latest
-            os_name: Linux
-          - runner: windows-latest
-            os_name: Windows
-          - runner: macos-latest
-            os_name: macOS
-
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Build optimized binary
+      - name: Build optimized Linux binary
         run: cargo build --release
 
-      - name: Create Unix package
-        if: runner.os != 'Windows'
+      - name: Create Linux tarball and checksum
         shell: bash
         run: |
           set -euo pipefail
-          package="job-crawler-${{ runner.os }}-${{ runner.arch }}"
-          stage="dist/${package}"
 
-          mkdir -p "$stage"
-          install -m 0755 target/release/job-crawler "$stage/job-crawler"
-          cp README.md LICENSE "$stage/"
-          cp -R examples "$stage/examples"
+          package_name="job-crawler-linux-x86_64"
+          staging_dir="dist/${package_name}"
 
-          tar -czf "dist/${package}.tar.gz" -C dist "$package"
+          mkdir -p "${staging_dir}"
+          install -m 0755 target/release/job-crawler "${staging_dir}/job-crawler"
+          cp README.md LICENSE "${staging_dir}/"
+          cp -R examples "${staging_dir}/examples"
+
+          tar -czf "dist/${package_name}.tar.gz" -C dist "${package_name}"
           cd dist
-          sha256sum "${package}.tar.gz" > "${package}.tar.gz.sha256"
+          sha256sum "${package_name}.tar.gz" > "${package_name}.tar.gz.sha256"
 
-      - name: Create Windows package
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $package = "job-crawler-${{ runner.os }}-${{ runner.arch }}"
-          $stage = Join-Path "dist" $package
-
-          New-Item -ItemType Directory -Force -Path $stage | Out-Null
-          Copy-Item "target/release/job-crawler.exe" (Join-Path $stage "job-crawler.exe")
-          Copy-Item "README.md", "LICENSE" $stage
-          Copy-Item "examples" $stage -Recurse
-
-          $archive = "dist/$package.zip"
-          Compress-Archive -Path "$stage/*" -DestinationPath $archive -Force
-          $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
-          "$hash  $package.zip" | Out-File -FilePath "$archive.sha256" -Encoding ascii
-
-      - name: Upload build package
+      - name: Upload Linux package
         uses: actions/upload-artifact@v4
         with:
-          name: job-crawler-${{ runner.os }}-${{ runner.arch }}
-          path: dist/*
+          name: job-crawler-linux-x86_64
+          path: |
+            dist/job-crawler-linux-x86_64.tar.gz
+            dist/job-crawler-linux-x86_64.tar.gz.sha256
           if-no-files-found: error
           retention-days: 30
 
   publish-release:
-    name: Publish GitHub Release
+    name: Publish Linux package to GitHub Releases
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: package
-    runs-on: ubuntu-latest
+    needs: build-linux
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
+
     steps:
-      - name: Download platform packages
+      - name: Download Linux package
         uses: actions/download-artifact@v4
         with:
-          pattern: job-crawler-*
+          name: job-crawler-linux-x86_64
           path: release-assets
-          merge-multiple: true
 
-      - name: Publish release assets
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
